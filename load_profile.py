@@ -1,6 +1,6 @@
 """
  This is a script to format raw ERCOT load profiles into the format desired for GenX modeling
- Options are described in the main() function
+ Options are described at bottom of script
 """
 
 from pathlib import Path
@@ -11,70 +11,6 @@ import pandas as pd
 simplefilter(action="ignore", category=pd.errors.PerformanceWarning)
 
 pd.options.mode.chained_assignment = None
-
-
-def separate_date_time(df):
-    """Separates DataFrame with datetime column into Year, Month, Day, and Period columns
-
-    Args:
-        df (pandas.DataFrame): DataFrame with column named "datetime" containing datetime objects
-
-    Returns:
-        pandas.DataFrame: DataFrame with separate columns for Year, Month, Day, and Period
-    """
-
-    df["Year"] = [d.year for d in df["date_time"]]
-    df["Month"] = [d.month for d in df["date_time"]]
-    df["Day"] = [d.day for d in df["date_time"]]
-    df["Period"] = [d.hour for d in df["date_time"]]
-    df = df.drop(columns=["date_time"])
-
-    # Rearrange columns
-    cols = df.columns.tolist()
-    cols = cols[-4:] + cols[:-4]
-    df = df[cols]
-
-    return df
-
-
-def ERCOT_hour_ending_to_datetime(base_profile):
-    """Gets timeseries of ERCOT load profile
-    TODO Document or prove necessity of this function
-
-    Args:
-        base_profile (pandas.DataFrame): load profile
-
-    Returns:
-        pandas.DataFrame: DataFrame with separate columns for Year, Month, Day, and Period
-    """
-    date_time = pd.DataFrame()
-
-    times = base_profile["Hour Ending"]
-    times2 = []
-
-    for i in range(len(times)):
-        if "DST" in times[i]:
-            times[i] = times[i].replace("DST", "")
-        for j in range(1, 10):
-            hour_check = " 0%s:" % str(j)
-            hour_new = " 0%s:" % str(j - 1)
-            if hour_check in times[i]:
-                times2.append(times[i].replace(hour_check, hour_new))
-        for j in range(10, 11):
-            hour_check = " %s:" % str(j)
-            hour_new = " 0%s:" % str(j - 1)
-            if hour_check in times[i]:
-                times2.append(times[i].replace(hour_check, hour_new))
-        for j in range(11, 25):
-            hour_check = " %s:" % str(j)
-            hour_new = " %s:" % str(j - 1)
-            if hour_check in times[i]:
-                times2.append(times[i].replace(hour_check, hour_new))
-
-    date_time["date_time"] = pd.to_datetime(times2, infer_datetime_format=True)
-    date_time = separate_date_time(date_time)
-
-    return date_time
 
 
 def load_by_16_region(load, county_population_data):
@@ -89,9 +25,10 @@ def load_by_16_region(load, county_population_data):
     ).T
 
     # aggregate county profiles into model region profiles
-    model_region_loads = load[
-        ["Year", "Month", "Day", "Period"]
-    ]  # initialize with time columns
+    # model_region_loads = load[
+    #     ["Year", "Month", "Day", "Period"]
+    # ]  # initialize with time columns
+    model_region_loads = pd.DataFrame()
     for model_region in set(county_population_data["model_region"]):
         model_region_loads[model_region] = county_loads[
             county_population_data.index[
@@ -180,6 +117,8 @@ def generate_16_region_load_profiles(
     county_population_data,
     ev_loads,
     scaling_factor=1.018,
+    intermediate_year=None,
+    intermediate_load=None,
 ):
     """Scales base profile to intermediate profile's energy, and then scales that 1.018 per year to each model year
 
@@ -191,15 +130,27 @@ def generate_16_region_load_profiles(
         county_population_data (pandas.DataFrame): Contains population data for each county for each model year
         ev_loads (pandas.DataFrame): Contains EV load data for each county for each model year (24 hours)
         scaling_factor (float like): Factor to scale load by each year (from first model year)
+        intermediate_year (numeric or str): Year of intermediate profile, only used for file naming purposes
+                                            if none, does not scale to intermediate profile
+                                            also does not scale if base year >= intermediate year
+        intermediate_load (pandas.DataFrame): Load profile for scaling to intermediate year, scales on total energy
+
+    Returns:
+        dict: keys are years, values are load profiles for each model region
     """
     # make output folder
     output_dir_year = output_dir / f"load_base_{base_year}"
+
+    if intermediate_year:
+        # change dir if intermediate year
+        output_dir_year = output_dir_year / f"load_intermediate_{intermediate_year}"
+
+        # calculate sum
+        intermediate_load_no_tz = intermediate_load.drop(columns=["Hour Ending"])
+        intermediate_sum = intermediate_load_no_tz.sum().sum()
+
     output_dir_year.mkdir(parents=True, exist_ok=True)
 
-    # verifies time
-    date_time = ERCOT_hour_ending_to_datetime(base_profile)
-
-    base_profile = date_time.merge(base_profile, left_index=True, right_index=True)
     base_profile.drop(["Hour Ending"], axis=1, inplace=True)
 
     ## process population data for given base year
@@ -227,6 +178,7 @@ def generate_16_region_load_profiles(
     names_16_region.sort()
     names_16_region = names_16_region[7:16] + names_16_region[0:7]
 
+    out = {}
     for model_year in model_years:
 
         # Switch cdr regions to model regions
@@ -240,7 +192,9 @@ def generate_16_region_load_profiles(
         total_base_profile = base_profile[names_cdr_region].sum().sum()
 
         tol = 1e-4
-        assert tol > abs(total_16_region - total_base_profile)
+        assert tol > abs(
+            total_16_region - total_base_profile
+        ), "difference in total load greater than tolerance after splitting by 16 regions"
 
         # drop leap year, if relevant
         if len(load_profile_16_region) > 8760:
@@ -258,13 +212,18 @@ def generate_16_region_load_profiles(
             errors="ignore",
         )
 
-        # scale up to first model year
-        # TODO
-        #
-        #
+        if intermediate_year and (int(base_year) < int(intermediate_year)):
+            # scale up to intermediate year by total energy
+            # scale factor = total energy in intermediate year / total energy in base year
+            load_profile_16_region *= intermediate_sum / total_16_region
+            # years for load scaling
+            n_years = model_year - int(intermediate_year)
 
-        # scale up to current model year
-        n_years = model_year - int(base_year)
+        else:
+            # years for load scaling
+            n_years = model_year - int(base_year)
+
+        # scale up to current model year from intermediate or base year
         load_profile_16_region_scaled = load_profile_16_region * (
             scaling_factor**n_years
         )
@@ -281,30 +240,69 @@ def generate_16_region_load_profiles(
         # sort profiles before saving
         load_profile_16_region_scaled = load_profile_16_region_scaled[names_16_region]
 
-        # save to file
-        load_profile_16_region_scaled.to_csv(
+        # save to dict
+        out[
             output_dir_year / f"load_base{base_year}_model{model_year}.csv",
-        )
+        ] = load_profile_16_region_scaled
+
+    return out
 
 
-def main():
+def read_ercot_load_profile(path: Path) -> pd.DataFrame:
+    """Returns dataframe, making column names consistent across years
 
-    ###### OPTIONS ######
+    Args:
+        path (Path): path to excel file
 
-    input_dir = Path("inputs")  # location of input files
-    output_dir = Path("outputs")  # location of output files
-    data_dir = Path(
-        "data"
-    )  # location of data (EV Load, county population, etc.), looks for "county_population_data.csv" and "ev_extra_loads.csv"
+    Returns:
+        pd.DataFrame: contains load profiles by region, with proper column names
+    """
 
-    # load_files = [
-    #     input_dir / "Native_Load_2020.xlsx",
-    #     input_dir / "Native_Load_2021_NOShed.xlsx",
-    # ] # list specific files with Path objects
-    load_files = input_dir.glob(
-        "*.xlsx"
-    )  # list of Path objects to all .xlsx files in input_dir, an alternative to the above
-    #####################
+    df = pd.read_excel(path, index_col=0, parse_dates=True)
+    df.index.name = "Hour Ending"
+    df.reset_index(inplace=True)
+
+    # since >>>errors="ignore"<<<, this will not raise an error
+    # if the column names are already correct
+    rename_columns = {
+        "FAR_WEST": "FWEST",
+        "NORTH_C": "NCENT",
+        "SOUTHERN": "SOUTH",
+        "SOUTH_C": "SCENT",
+    }
+    df.rename(
+        columns=rename_columns,
+        inplace=True,
+        errors="ignore",
+    )
+
+    # drop ERCOT column
+    df.drop(columns=["ERCOT"], inplace=True)
+
+    # make sure all columns are correct
+    true_columns = {
+        "NORTH",
+        "SOUTH",
+        "COAST",
+        "SCENT",
+        "WEST",
+        "NCENT",
+        "FWEST",
+        "Hour Ending",
+        "EAST",
+    }
+    assert set(df.columns) == true_columns, "Column names are not correct"
+
+    return df
+
+
+def main(
+    output_dir,
+    data_dir,
+    load_files,
+    intermediate_load=None,
+    intermediate_year=None,
+):
 
     county_populations = pd.read_csv(data_dir / "county_population_data.csv")
     ev_loads = pd.read_csv(data_dir / "ev_extra_loads.csv")
@@ -326,22 +324,50 @@ def main():
     county_populations["cdr_zone"] = county_populations["cdr_zone"].map(cdr_zone_dict)
     county_populations.dropna(inplace=True)
 
-    for file_name in load_files:
-        base_year = file_name.stem.split("_")[2]
+    for base_year, file_name in load_files.items():
 
-        base_profile = pd.read_excel(file_name, index_col=0)
-        base_profile.index.name = "Hour Ending"
-        base_profile.reset_index(inplace=True)
+        base_profile = read_ercot_load_profile(file_name)
 
-        generate_16_region_load_profiles(
+        files = generate_16_region_load_profiles(
             base_profile,
             base_year=base_year,
             output_dir=output_dir,
             model_years=[2030, 2035],
             county_population_data=county_populations,
             ev_loads=ev_loads,
+            intermediate_load=intermediate_load,
+            intermediate_year=intermediate_year,
         )
+
+        for file, df in files.items():
+            df.to_csv(file[0])
 
 
 if __name__ == "__main__":
-    main()
+    ###### OPTIONS ######
+
+    input_dir = Path("inputs")  # location of input files
+    output_dir = Path("outputs")  # location of output files
+    data_dir = Path(
+        "data"
+    )  # location of data, looks for "county_population_data.csv" and "ev_extra_loads.csv"
+
+    load_files = {
+        "2002": input_dir / "2002_ercot_hourly_load_data.xls",
+        "2003": input_dir / "2003_ercot_hourly_load_data.xls",
+        "2014": input_dir / "2014_ercot_hourly_load_data.xls",
+        "2020": input_dir / "Native_Load_2020.xlsx",
+        "2021": input_dir / "Native_Load_2021_NOShed.xlsx",
+    }
+
+    intermediate_load = read_ercot_load_profile(input_dir / "Native_Load_2020.xlsx")
+    intermediate_year = 2020
+
+    ###### END OPTIONS ######
+    main(
+        output_dir=output_dir,
+        data_dir=data_dir,
+        load_files=load_files,
+        intermediate_load=intermediate_load,
+        intermediate_year=intermediate_year,
+    )

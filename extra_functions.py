@@ -1,3 +1,6 @@
+import pandas as pd
+
+
 def percentage_of_whole(df, value_column, group_by_column):
     """Creates dictionary where keys are values in group_by_column and values are
     percentage of total of value column
@@ -84,3 +87,72 @@ def process_county_region_mapping(county_data, region_column):
 #         REGION_LOADS[zone] = sum_of_loads
 
 #     return REGION_LOADS
+
+
+def separate_date_time(df):
+    """Separates DataFrame with datetime column into Year, Month, Day, and Period columns
+
+    Args:
+        df (pandas.DataFrame): DataFrame with column named "datetime" containing datetime objects
+
+    Returns:
+        pandas.DataFrame: DataFrame with separate columns for Year, Month, Day, and Period
+    """
+
+    df["Year"] = [d.year for d in df["date_time"]]
+    df["Month"] = [d.month for d in df["date_time"]]
+    df["Day"] = [d.day for d in df["date_time"]]
+    df["Period"] = [d.hour for d in df["date_time"]]
+    df = df.drop(columns=["date_time"])
+
+    # Rearrange columns
+    cols = df.columns.tolist()
+    cols = cols[-4:] + cols[:-4]
+    df = df[cols]
+
+    return df
+
+
+def ERCOT_hour_ending_to_datetime(base_profile):
+    """Gets timeseries of ERCOT load profile, does something with adjusting for DST
+    TODO Document or prove necessity of this function
+
+    Args:
+        base_profile (pandas.DataFrame): load profile
+
+    Returns:
+        pandas.DataFrame: DataFrame with separate columns for Year, Month, Day, and Period
+    """
+    date_time = pd.DataFrame()
+
+    times = base_profile["Hour Ending"]
+    times7 = times.copy()
+    times2 = []
+
+    for i in range(len(times)):
+        if "DST" in times[i]:
+            times[i] = times[i].replace("DST", "")
+        for j in range(1, 10):
+            hour_check = " 0%s:" % str(j)
+            hour_new = " 0%s:" % str(j - 1)
+            if hour_check in times[i]:
+                times2.append(times[i].replace(hour_check, hour_new))
+        for j in range(10, 11):
+            hour_check = " %s:" % str(j)
+            hour_new = " 0%s:" % str(j - 1)
+            if hour_check in times[i]:
+                times2.append(times[i].replace(hour_check, hour_new))
+        for j in range(11, 25):
+            hour_check = " %s:" % str(j)
+            hour_new = " %s:" % str(j - 1)
+            if hour_check in times[i]:
+                times2.append(times[i].replace(hour_check, hour_new))
+
+    date_time["date_time"] = pd.to_datetime(times2, infer_datetime_format=True)
+    date_time = separate_date_time(date_time)
+
+    return date_time
+
+
+def set_tz(q):
+    return q.tz_localize("America/Chicago", ambiguous=True)
