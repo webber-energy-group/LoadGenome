@@ -1,5 +1,6 @@
 """
  This is a script to format raw ERCOT load profiles into the format desired for GenX modeling
+ Options are described in the main() function
 """
 
 from pathlib import Path
@@ -38,6 +39,7 @@ def separate_date_time(df):
 
 def ERCOT_hour_ending_to_datetime(base_profile):
     """Gets timeseries of ERCOT load profile
+    TODO Document or prove necessity of this function
 
     Args:
         base_profile (pandas.DataFrame): load profile
@@ -76,6 +78,9 @@ def ERCOT_hour_ending_to_datetime(base_profile):
 
 
 def load_by_16_region(load, county_population_data):
+    """Separates ERCOT cdr load profiles into 16 regions,
+    requires preprocessing with county_population_data to include cdr_zone_percent"""
+    # more of a code block/abstraction than a true function
 
     # create a profile for each county based on percentage of population in cdr_zone
     # by multiplying profile by that percentage
@@ -84,13 +89,17 @@ def load_by_16_region(load, county_population_data):
     ).T
 
     # aggregate county profiles into model region profiles
-    model_region_loads = load[["Year", "Month", "Day", "Period"]]
+    model_region_loads = load[
+        ["Year", "Month", "Day", "Period"]
+    ]  # initialize with time columns
     for model_region in set(county_population_data["model_region"]):
         model_region_loads[model_region] = county_loads[
             county_population_data.index[
                 county_population_data["model_region"] == model_region
             ].tolist()
-        ].sum(axis=1)
+        ].sum(
+            axis=1
+        )  # summing loads for each county in model region
 
     return model_region_loads
 
@@ -107,6 +116,24 @@ def percentage_of_whole_for_each(df, value_column, group_by_column):
 
     Returns:
         pandas.Series: index corresponds to value_column
+
+    Example:
+        df =
+            value_column group_by_column
+            1               a
+            2               a
+            3               a
+            4               b
+            5               b
+            6               b
+
+        returns:
+            1/(1+2+3) # first value fraction of all of a
+            2/6
+            3/6
+            4/(4+5+6) # first value fraction of all of b
+            5/15
+            6/15
     """
 
     return df[value_column] / df.groupby(group_by_column)[value_column].transform("sum")
@@ -120,6 +147,22 @@ def percentage_of_whole(df, value_column, group_by_column):
         df (pandas.DataFrame): Contains data to be used
         value_column (string): column containing values to find percentage of whole
         group_by_column (string): column containing values to group by
+
+    Returns:
+        dict: keys are values in group_by_column and values are percentage of total of value column
+
+    Example:
+        df =
+            value_column group_by_column
+            1               a
+            2               a
+            3               a
+            4               b
+            5               b
+            6               b
+
+        returns:
+            {'a': 6/21, 'b': 15/21}
     """
     sum_df = pd.DataFrame(df.groupby(group_by_column)[value_column].sum())
     out = pd.DataFrame(sum_df[value_column] / sum_df[value_column].sum()).to_dict()[
@@ -153,7 +196,7 @@ def generate_16_region_load_profiles(
     output_dir_year = output_dir / f"load_base_{base_year}"
     output_dir_year.mkdir(parents=True, exist_ok=True)
 
-    # something to verify time
+    # verifies time
     date_time = ERCOT_hour_ending_to_datetime(base_profile)
 
     base_profile = date_time.merge(base_profile, left_index=True, right_index=True)
@@ -180,7 +223,7 @@ def generate_16_region_load_profiles(
     names_16_region = list(set(county_population_data["model_region"]))
     names_cdr_region = list(set(county_population_data["cdr_zone"]))
 
-    # I hate this
+    # sort 16region names, not great but best we can do since not alphanumeric
     names_16_region.sort()
     names_16_region = names_16_region[7:16] + names_16_region[0:7]
 
@@ -235,7 +278,7 @@ def generate_16_region_load_profiles(
                 ev_load * population_fraction_16_region[model_region]
             )
 
-        # sort profiles
+        # sort profiles before saving
         load_profile_16_region_scaled = load_profile_16_region_scaled[names_16_region]
 
         # save to file
@@ -250,7 +293,9 @@ def main():
 
     input_dir = Path("inputs")  # location of input files
     output_dir = Path("outputs")  # location of output files
-    data_dir = Path("data")  # location of data (EV Load, county population, etc.)
+    data_dir = Path(
+        "data"
+    )  # location of data (EV Load, county population, etc.), looks for "county_population_data.csv" and "ev_extra_loads.csv"
 
     # load_files = [
     #     input_dir / "Native_Load_2020.xlsx",
@@ -258,12 +303,14 @@ def main():
     # ] # list specific files with Path objects
     load_files = input_dir.glob(
         "*.xlsx"
-    )  # list of Path objects to all .xlsx files in input_dir
+    )  # list of Path objects to all .xlsx files in input_dir, an alternative to the above
     #####################
 
     county_populations = pd.read_csv(data_dir / "county_population_data.csv")
     ev_loads = pd.read_csv(data_dir / "ev_extra_loads.csv")
 
+    # mapping of names in county population data to names used in load profiles
+    # and drop counties that don't have an ERCOT load profile
     cdr_zone_dict = {
         "non-load": None,
         "none": None,
@@ -276,7 +323,6 @@ def main():
         "south central": "SCENT",
         "west": "WEST",
     }
-
     county_populations["cdr_zone"] = county_populations["cdr_zone"].map(cdr_zone_dict)
     county_populations.dropna(inplace=True)
 
@@ -294,8 +340,6 @@ def main():
             model_years=[2030, 2035],
             county_population_data=county_populations,
             ev_loads=ev_loads,
-            # load_zones=load_zones, #set(df["model_region"]) and drop none
-            # county_regions=county_regions,
         )
 
 
