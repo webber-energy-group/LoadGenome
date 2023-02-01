@@ -141,7 +141,10 @@ def generate_16_region_load_profiles(
     # make output folder
     output_dir_year = output_dir / f"load_base_{base_year}"
 
-    if intermediate_year:
+    # true if intermediate year is not none and base year is less than intermediate year
+    int_year_bool = intermediate_year and (int(base_year) < int(intermediate_year))
+
+    if int_year_bool:
         # change dir if intermediate year
         output_dir_year = output_dir_year / f"load_intermediate_{intermediate_year}"
 
@@ -212,7 +215,7 @@ def generate_16_region_load_profiles(
             errors="ignore",
         )
 
-        if intermediate_year and (int(base_year) < int(intermediate_year)):
+        if int_year_bool:
             # scale up to intermediate year by total energy
             # scale factor = total energy in intermediate year / total energy in base year
             load_profile_16_region *= intermediate_sum / total_16_region
@@ -241,9 +244,15 @@ def generate_16_region_load_profiles(
         load_profile_16_region_scaled = load_profile_16_region_scaled[names_16_region]
 
         # save to dict
-        out[
-            output_dir_year / f"load_base{base_year}_model{model_year}.csv",
-        ] = load_profile_16_region_scaled
+        if int_year_bool:
+            out[
+                output_dir_year
+                / f"load_base{base_year}_intermediate{intermediate_year}_model{model_year}.csv"
+            ] = load_profile_16_region_scaled
+        else:
+            out[
+                output_dir_year / f"load_base{base_year}_model{model_year}.csv"
+            ] = load_profile_16_region_scaled
 
     return out
 
@@ -300,6 +309,7 @@ def main(
     output_dir,
     data_dir,
     load_files,
+    model_years,
     intermediate_load=None,
     intermediate_year=None,
 ):
@@ -332,7 +342,7 @@ def main(
             base_profile,
             base_year=base_year,
             output_dir=output_dir,
-            model_years=[2030, 2035],
+            model_years=model_years,
             county_population_data=county_populations,
             ev_loads=ev_loads,
             intermediate_load=intermediate_load,
@@ -340,7 +350,7 @@ def main(
         )
 
         for file, df in files.items():
-            df.to_csv(file[0])
+            df.to_csv(file)
 
 
 if __name__ == "__main__":
@@ -352,22 +362,39 @@ if __name__ == "__main__":
         "data"
     )  # location of data, looks for "county_population_data.csv" and "ev_extra_loads.csv"
 
-    load_files = {
-        "2002": input_dir / "2002_ercot_hourly_load_data.xls",
-        "2003": input_dir / "2003_ercot_hourly_load_data.xls",
-        "2014": input_dir / "2014_ercot_hourly_load_data.xls",
-        "2020": input_dir / "Native_Load_2020.xlsx",
-        "2021": input_dir / "Native_Load_2021_NOShed.xlsx",
-    }
+    # load_files = {
+    #     "2002": input_dir / "2002_ercot_hourly_load_data.xls",
+    #     "2003": input_dir / "2003_ercot_hourly_load_data.xls",
+    #     "2014": input_dir / "2014_ercot_hourly_load_data.xls",
+    #     "2020": input_dir / "Native_Load_2020.xlsx",
+    #     "2021": input_dir / "Native_Load_2021_NOShed.xlsx",
+    # }
+    load_files = {}
+    load_files.update(
+        {
+            str(year): input_dir / f"{year}_ercot_hourly_load_data.xls"
+            for year in range(2002, 2016)
+        }
+    )
+    load_files.update({"2015": input_dir / "native_load_2015.xls"})
+    load_files.update(
+        {
+            str(year): input_dir / f"Native_Load_{year}.xlsx"
+            for year in range(2016, 2022)
+        }
+    )
 
-    intermediate_load = read_ercot_load_profile(input_dir / "Native_Load_2020.xlsx")
-    intermediate_year = 2020
+    model_years = [2021]  # list
+
+    intermediate_load = read_ercot_load_profile(input_dir / "Native_Load_2021.xlsx")
+    intermediate_year = 2021
 
     ###### END OPTIONS ######
     main(
         output_dir=output_dir,
         data_dir=data_dir,
         load_files=load_files,
+        model_years=model_years,
         intermediate_load=intermediate_load,
         intermediate_year=intermediate_year,
     )
