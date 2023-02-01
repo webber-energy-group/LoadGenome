@@ -380,13 +380,16 @@ if __name__ == "__main__":
     load_files.update(
         {
             str(year): input_dir / f"Native_Load_{year}.xlsx"
-            for year in range(2016, 2022)
+            for year in range(2016, 2021)
         }
     )
+    load_files.update({"2021": input_dir / "Native_Load_2021_NOShed.xlsx"})
 
     model_years = [2021]  # list
 
-    intermediate_load = read_ercot_load_profile(input_dir / "Native_Load_2021.xlsx")
+    intermediate_load = read_ercot_load_profile(
+        input_dir / "Native_Load_2021_NOShed.xlsx"
+    )
     intermediate_year = 2021
 
     ###### END OPTIONS ######
