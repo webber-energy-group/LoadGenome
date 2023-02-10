@@ -11,7 +11,9 @@ If a load profile is from a leap year, hours 1416 through 1440 (Feb 29) are drop
 Furthermore, this tool can be used to optionally scale load to an "intermediate year" and scale annually by a fixed percent.
 When scaling to an intermediate year, the tool scales the input load such that the sum of load is the same as the intermediate load. If a input/base profile has a total energy of 10 TWh and the intermediate profile has a total energy of 100 TWh, all load values in the base profile would be multiplied by 10.
 Scaling annually is performed as
+
 $$ \text{New Load} = \text{Load} \cdot s^{(n_f-n_0)}$$
+
 where $\text{Load}$ is a load value, $s$ is a scaling factor (typically 1.018), $n_f$ is the desired final/model year, and $n_0$ is the year of the profile (which would be the base year, or intermediate profile year if that is used).
 
 EV load can also be added to load profiles. Since EV data tend to not vary daily, a 24 hour profile is given for a year. The model repeats the 24 hour profile 365 times and adds it to the final profile after scaling.
