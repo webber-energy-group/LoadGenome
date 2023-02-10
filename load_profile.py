@@ -258,7 +258,7 @@ def generate_16_region_load_profiles(
 
 
 def read_ercot_load_profile(path: Path) -> pd.DataFrame:
-    """Returns dataframe, making column names consistent across years
+    """Returns dataframe, making column names consistent across years (specific to ERCOT)
 
     Args:
         path (Path): path to excel file
@@ -362,30 +362,30 @@ if __name__ == "__main__":
         "data"
     )  # location of data, looks for "county_population_data.csv" and "ev_extra_loads.csv"
 
-    # load_files = {
-    #     "2002": input_dir / "2002_ercot_hourly_load_data.xls",
-    #     "2003": input_dir / "2003_ercot_hourly_load_data.xls",
-    #     "2014": input_dir / "2014_ercot_hourly_load_data.xls",
-    #     "2020": input_dir / "Native_Load_2020.xlsx",
-    #     "2021": input_dir / "Native_Load_2021_NOShed.xlsx",
-    # }
-    load_files = {}
-    load_files.update(
-        {
-            str(year): input_dir / f"{year}_ercot_hourly_load_data.xls"
-            for year in range(2002, 2016)
-        }
-    )
-    load_files.update({"2015": input_dir / "native_load_2015.xls"})
-    load_files.update(
-        {
-            str(year): input_dir / f"Native_Load_{year}.xlsx"
-            for year in range(2016, 2021)
-        }
-    )
-    load_files.update({"2021": input_dir / "Native_Load_2021_NOShed.xlsx"})
+    load_files = {
+        # "2002": input_dir / "2002_ercot_hourly_load_data.xls",
+        # "2003": input_dir / "2003_ercot_hourly_load_data.xls",
+        # "2014": input_dir / "2014_ercot_hourly_load_data.xls",
+        "2020": input_dir / "Native_Load_2020.xlsx",
+        "2021": input_dir / "Native_Load_2021_NOShed.xlsx",
+    }
+    # load_files = {}
+    # load_files.update(
+    #     {
+    #         str(year): input_dir / f"{year}_ercot_hourly_load_data.xls"
+    #         for year in range(2002, 2016)
+    #     }
+    # )
+    # load_files.update({"2015": input_dir / "native_load_2015.xls"})
+    # load_files.update(
+    #     {
+    #         str(year): input_dir / f"Native_Load_{year}.xlsx"
+    #         for year in range(2016, 2021)
+    #     }
+    # )
+    # load_files.update({"2021": input_dir / "Native_Load_2021_NOShed.xlsx"})
 
-    model_years = [2021]  # list
+    model_years = [2030, 2035]  # list
 
     intermediate_load = read_ercot_load_profile(
         input_dir / "Native_Load_2021_NOShed.xlsx"
@@ -398,6 +398,6 @@ if __name__ == "__main__":
         data_dir=data_dir,
         load_files=load_files,
         model_years=model_years,
-        intermediate_load=intermediate_load,
-        intermediate_year=intermediate_year,
+        # intermediate_load=intermediate_load,
+        # intermediate_year=intermediate_year,
     )
