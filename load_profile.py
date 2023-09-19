@@ -112,13 +112,14 @@ def percentage_of_whole(df, value_column, group_by_column):
 def generate_16_region_load_profiles(
     base_profile,
     base_year,
-    output_dir,
     model_years,
     county_population_data,
     ev_loads,
     scaling_factor=1.018,
     intermediate_year=None,
     intermediate_load=None,
+    output_dir=None,
+    outputs_to_file=True,
 ):
     """Scales base profile to intermediate profile's energy, and then scales that 1.018 per year to each model year
 
@@ -138,21 +139,24 @@ def generate_16_region_load_profiles(
     Returns:
         dict: keys are years, values are load profiles for each model region
     """
-    # make output folder
-    output_dir_year = output_dir / f"load_base_{base_year}"
 
     # true if intermediate year is not none and base year is less than intermediate year
     int_year_bool = intermediate_year and (int(base_year) < int(intermediate_year))
 
     if int_year_bool:
-        # change dir if intermediate year
-        output_dir_year = output_dir_year / f"load_intermediate_{intermediate_year}"
-
         # calculate sum
         intermediate_load_no_tz = intermediate_load.drop(columns=["Hour Ending"])
         intermediate_sum = intermediate_load_no_tz.sum().sum()
 
-    output_dir_year.mkdir(parents=True, exist_ok=True)
+    if outputs_to_file:
+        # make output folder
+        output_dir_year = output_dir / f"load_base_{base_year}"
+
+        if int_year_bool:
+            # change dir if intermediate year
+            output_dir_year = output_dir_year / f"load_intermediate_{intermediate_year}"
+
+        output_dir_year.mkdir(parents=True, exist_ok=True)
 
     base_profile.drop(["Hour Ending"], axis=1, inplace=True)
 
@@ -183,7 +187,6 @@ def generate_16_region_load_profiles(
 
     out = {}
     for model_year in model_years:
-
         # Switch cdr regions to model regions
         load_profile_16_region = load_by_16_region(
             load=base_profile,
@@ -232,10 +235,13 @@ def generate_16_region_load_profiles(
         )
 
         # add EV load
-        ev_load = ev_loads[str(model_year)]
-        ev_load = pd.concat([ev_load] * 365, ignore_index=True)
+        if len(ev_loads) == 24:
+            ev_load = pd.concat([ev_load] * 365, ignore_index=True)
+        else:
+            ev_load = ev_loads[str(model_year)]
 
         for model_region in load_profile_16_region_scaled.columns:
+            assert len(ev_load) == len(load_profile_16_region_scaled)
             load_profile_16_region_scaled[model_region] += (
                 ev_load * population_fraction_16_region[model_region]
             )
@@ -244,15 +250,18 @@ def generate_16_region_load_profiles(
         load_profile_16_region_scaled = load_profile_16_region_scaled[names_16_region]
 
         # save to dict
-        if int_year_bool:
-            out[
-                output_dir_year
-                / f"load_base{base_year}_intermediate{intermediate_year}_model{model_year}.csv"
-            ] = load_profile_16_region_scaled
+        if outputs_to_file:
+            if int_year_bool:
+                out[
+                    output_dir_year
+                    / f"load_base{base_year}_intermediate{intermediate_year}_model{model_year}.csv"
+                ] = load_profile_16_region_scaled
+            else:
+                out[
+                    output_dir_year / f"load_base{base_year}_model{model_year}.csv"
+                ] = load_profile_16_region_scaled
         else:
-            out[
-                output_dir_year / f"load_base{base_year}_model{model_year}.csv"
-            ] = load_profile_16_region_scaled
+            out[model_year] = load_profile_16_region_scaled
 
     return out
 
@@ -312,8 +321,8 @@ def main(
     model_years,
     intermediate_load=None,
     intermediate_year=None,
+    print_files=False,
 ):
-
     county_populations = pd.read_csv(data_dir / "county_population_data.csv")
     ev_loads = pd.read_csv(data_dir / "ev_extra_loads.csv")
 
@@ -335,7 +344,6 @@ def main(
     county_populations.dropna(inplace=True)
 
     for base_year, file_name in load_files.items():
-
         base_profile = read_ercot_load_profile(file_name)
 
         files = generate_16_region_load_profiles(
@@ -362,6 +370,7 @@ if __name__ == "__main__":
         "data"
     )  # location of data, looks for "county_population_data.csv" and "ev_extra_loads.csv"
 
+    # select load files manually
     load_files = {
         # "2002": input_dir / "2002_ercot_hourly_load_data.xls",
         # "2003": input_dir / "2003_ercot_hourly_load_data.xls",
@@ -369,6 +378,8 @@ if __name__ == "__main__":
         "2020": input_dir / "Native_Load_2020.xlsx",
         "2021": input_dir / "Native_Load_2021_NOShed.xlsx",
     }
+
+    # # select load files with loops
     # load_files = {}
     # load_files.update(
     #     {
@@ -385,8 +396,11 @@ if __name__ == "__main__":
     # )
     # load_files.update({"2021": input_dir / "Native_Load_2021_NOShed.xlsx"})
 
+    # select model years (final load year)
     model_years = [2030, 2035]  # list
 
+    # select load  profile and year for intermediate load scaling
+    # (if None, no intermediate load scaling is done)
     intermediate_load = read_ercot_load_profile(
         input_dir / "Native_Load_2021_NOShed.xlsx"
     )
