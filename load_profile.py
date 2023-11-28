@@ -187,6 +187,11 @@ def generate_16_region_load_profiles(
 
     out = {}
     for model_year in model_years:
+        # drop leap year, if relevant
+        if len(base_profile) > 8760:
+            base_profile = base_profile.drop(base_profile.index[1416:1440])
+            base_profile.reset_index(inplace=True)
+
         # Switch cdr regions to model regions
         load_profile_16_region = load_by_16_region(
             load=base_profile,
@@ -201,13 +206,6 @@ def generate_16_region_load_profiles(
         assert tol > abs(
             total_16_region - total_base_profile
         ), "difference in total load greater than tolerance after splitting by 16 regions"
-
-        # drop leap year, if relevant
-        if len(load_profile_16_region) > 8760:
-            load_profile_16_region = load_profile_16_region.drop(
-                load_profile_16_region.index[1416:1440]
-            )
-            load_profile_16_region.reset_index(inplace=True)
 
         # Not sure if this the Year, Month, Day, Period columns are needed,
         # but it doesn't hurt to keep as is
